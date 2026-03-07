@@ -292,7 +292,7 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--tx);
         <div><label class="albl">Ad</label><input class="ai" id="rAd" type="text" placeholder="Adınız"></div>
         <div><label class="albl">Soyad</label><input class="ai" id="rSoyad" type="text" placeholder="Soyadınız"></div>
       </div>
-      <div class="af"><label class="albl">Firma Adı</label><input class="ai" id="rFirma" type="text" placeholder="İşletmenizin adı"></div>
+      <div class="af"><label class="albl">Firma Adı</label><input class="ai" id="rFirma" type="text" placeholder="İşletmenizin adı (zorunlu)" required></div>
     </div>
     <div class="af"><label class="albl">E-posta</label><input class="ai" id="aEmail" type="email" placeholder="ornek@mail.com" autocomplete="email"></div>
     <div class="af"><label class="albl">Şifre</label><input class="ai" id="aPass" type="password" placeholder="En az 6 karakter"></div>
@@ -639,7 +639,11 @@ async function doAuth(){
       const firma=document.getElementById('rFirma').value.trim();
       // Zorunlu alan kontrolleri
       if(!ad||!soyad){aErr('Ad ve soyad zorunludur!');btn.disabled=false;btn.textContent='Kayıt Ol';return}
-      if(!firma){aErr('⚠️ Firma adı zorunludur! Lütfen işletme adınızı girin.');btn.disabled=false;btn.textContent='Kayıt Ol';return}
+      if(!firma){
+        aErr('⚠️ Firma adı zorunludur! Firma adı girilmeden kayıt yapılamaz.');
+        document.getElementById('rFirma').focus();
+        btn.disabled=false;btn.textContent='Kayıt Ol';return
+      }
       const fullName=`${ad} ${soyad}`.trim();
       // Aynı firma adıyla daha önce kayıt var mı?
       const {data:existComp}=await sb.from('company').select('user_id,name').ilike('name',firma).limit(1);
@@ -1140,71 +1144,52 @@ async function fillKulUI(){
   const el=document.getElementById('kulUI');
   el.innerHTML='<div style="color:var(--mt);font-size:.82rem;padding:12px">Yükleniyor...</div>';
   const firmaAdi=COMP?.name||'';
-  // Aynı firma adına sahip tüm company kayıtlarını çek
-  const {data:firmaUsers,error:fErr}=await sb.from('company').select("Kullanıcı kim,isim").ilike("isim",firmaAdi);
-  if(fErr||!firmaUsers?.length){el.innerHTML=`<div style="color:var(--mt);font-size:.82rem;text-align:center;padding:16px">Kullanıcı listesi alınamadı.<br><small style="color:var(--rd)">RLS politikasını Supabase'de güncellemeniz gerekiyor.</small></div>`;return}
+  const {data:firmaUsers}=await sb.from('company').select('user_id,name').ilike('name',firmaAdi);
+  if(!firmaUsers?.length){el.innerHTML='<div style="color:var(--mt);font-size:.82rem;text-align:center;padding:16px">Firma kullanıcısı bulunamadı.</div>';return}
   const userIds=firmaUsers.map(x=>x.user_id);
-  // profiles tablosundan bu kullanıcıları çek
-  const {data,error:pErr}=await sb.from('profiles').select("İD,\"Ad Soyad\",telefon,rol,dondurulmuş").in('id',userIds).order('created_at');
-  if(pErr||!data?.length){
-    // RLS engelliyorsa — sadece kendi profilini göster
-    el.innerHTML=`<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:10px;padding:14px;font-size:.82rem;color:#fca5a5;line-height:1.6">
-      ⚠️ Kullanıcı listesi görüntülenemiyor.<br>
-      Supabase → SQL Editor'da <b>supabase-fix-rls.sql</b> dosyasını çalıştırın.
-    </div>`;
-    return;
-  }
-  el.innerHTML=`<div style="font-size:.72rem;color:var(--mt);margin-bottom:12px;display:flex;justify-content:space-between;padding:0 2px">
-    <span>🏢 ${firmaAdi}</span>
-    <span>${data.length} kullanıcı</span>
-  </div>`+data.map(u=>{
+  const {data,error}=await sb.from('profiles').select('id,full_name,phone,role,frozen').in('id',userIds).order('created_at');
+  if(error||!data?.length){el.innerHTML='<div style="color:var(--mt);font-size:.82rem;text-align:center;padding:16px">Kullanıcı listesi alınamadı.</div>';return}
+  el.innerHTML=`<div style="font-size:.72rem;color:var(--mt);margin-bottom:12px;display:flex;justify-content:space-between;padding:0 2px"><span>🏢 ${firmaAdi}</span><span>${data.length} kullanıcı</span></div>`
+  +data.map(u=>{
     const isMe=u.id===U.id;
-    const isAdm=u.rolee==="admin";
+    const isAdm=u.role==='admin';
     const frozen=u.frozen===true;
-    const avBg=frozen?'background:#374151':'background:var(--grad)';
     return`<div style="background:var(--s2);border:1px solid ${frozen?'rgba(239,68,68,.3)':'var(--bd)'};border-radius:12px;padding:14px;margin-bottom:10px;opacity:${frozen?'.65':'1'}">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:${!isMe&&!isAdm?'12px':'0'}">
-        <div style="width:42px;height:42px;border-radius:11px;${avBg};display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:.9rem;flex-shrink:0">
-          ${frozen?'🔒':(u.full_name||"?")[0].toUpperCase()}
-        </div>
+        <div style="width:42px;height:42px;border-radius:11px;background:${frozen?'#374151':'var(--grad)'};display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:.9rem;flex-shrink:0">${frozen?'🔒':(u.full_name||'?')[0].toUpperCase()}</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:.87rem;font-weight:700;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
-            ${u.full_name||"İsimsiz"}
+            ${u.full_name||'İsimsiz'}
             ${isAdm?'<span style="background:rgba(99,102,241,.2);color:var(--p2);font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:5px">👑 ADMİN</span>':''}
             ${frozen?'<span style="background:rgba(239,68,68,.15);color:#f87171;font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:5px">❄️ DONDURULDU</span>':''}
             ${isMe?'<span style="background:rgba(16,185,129,.15);color:#34d399;font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:5px">SEN</span>':''}
           </div>
           <div style="font-size:.7rem;color:var(--mt);margin-top:3px">${u.phone||'Telefon girilmedi'}</div>
         </div>
-        ${!isMe&&!isAdm?`<select style="background:var(--s3);border:1px solid var(--bd);border-radius:8px;padding:6px 7px;color:var(--tx);font-family:'Outfit',sans-serif;font-size:.73rem;font-weight:700;cursor:pointer" onchange="updRole('${u.id||u.id}',this.value)" ${frozen?'disabled':''}>
-          <option value="manager" ${u.rolee==="manager"?'selected':''}>🔧 Manager</option>
-          <option value="staff" ${u.rolee==="staff"?'selected':''}>👷 Staff</option>
-          <option value="viewer" ${u.rolee==="viewer"?'selected':''}>👁 Viewer</option>
+        ${!isMe&&!isAdm?`<select style="background:var(--s3);border:1px solid var(--bd);border-radius:8px;padding:6px 7px;color:var(--tx);font-family:'Outfit',sans-serif;font-size:.73rem;font-weight:700;cursor:pointer" onchange="updRole('${u.id}',this.value)" ${frozen?'disabled':''}>
+          <option value="admin" ${u.role==='admin'?'selected':''}>👑 Admin</option>
+          <option value="manager" ${u.role==='manager'?'selected':''}>🔧 Manager</option>
+          <option value="staff" ${u.role==='staff'?'selected':''}>👷 Staff</option>
+          <option value="viewer" ${u.role==='viewer'?'selected':''}>👁 Viewer</option>
         </select>`:''}
       </div>
       ${!isMe&&!isAdm?`<div style="display:flex;gap:8px;margin-top:10px">
-        <button onclick="toggleFreeze('${u.id||u.id}',${frozen})" style="flex:1;padding:9px;border-radius:9px;border:1px solid ${frozen?'rgba(16,185,129,.3)':'rgba(245,158,11,.3)'};background:${frozen?'rgba(16,185,129,.1)':'rgba(245,158,11,.1)'};color:${frozen?'#34d399':'#fbbf24'};font-family:'Outfit',sans-serif;font-weight:700;font-size:.78rem;cursor:pointer">
-          ${frozen?'🔓 Aktif Et':'🔒 Dondur'}
-        </button>
-        <button onclick="delUser('${u.id||u.id}','${(u.full_name||"Kullanıcı").replace(/'/g,"\'")}')" style="flex:1;padding:9px;border-radius:9px;border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.1);color:#f87171;font-family:'Outfit',sans-serif;font-weight:700;font-size:.78rem;cursor:pointer">
-          🗑 Sil
-        </button>
-      </div>`:isAdm&&!isMe?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bd);font-size:.7rem;color:var(--mt);text-align:center">Firmada tek admin · Silinemez veya dondurulamaz</div>`:''}
+        <button onclick="toggleFreeze('${u.id}',${frozen})" style="flex:1;padding:9px;border-radius:9px;border:1px solid ${frozen?'rgba(16,185,129,.3)':'rgba(245,158,11,.3)'};background:${frozen?'rgba(16,185,129,.1)':'rgba(245,158,11,.1)'};color:${frozen?'#34d399':'#fbbf24'};font-family:'Outfit',sans-serif;font-weight:700;font-size:.78rem;cursor:pointer">${frozen?'🔓 Aktif Et':'🔒 Dondur'}</button>
+        <button onclick="delUser('${u.id}','${(u.full_name||'Kullanici').replace(/['"]/g,'')}')" style="flex:1;padding:9px;border-radius:9px;border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.1);color:#f87171;font-family:'Outfit',sans-serif;font-weight:700;font-size:.78rem;cursor:pointer">🗑 Sil</button>
+      </div>`:isAdm&&!isMe?'<div style="margin-top:8px;font-size:.7rem;color:var(--mt);text-align:center">👑 Admin silinemiyor</div>':''}
     </div>`;
   }).join('');
 }
-
 async function updRole(uid,role){
-  await sb.from('profiles').update({role}).eq('id',uid);
-  showToast('✅','Rol güncellendi!');
-  fillKulUI();
+  const {error}=await sb.from('profiles').update({role}).eq('id',uid);
+  if(error){showToast('❌','Hata: '+error.message);}
+  else{showToast('✅','Rol güncellendi!');fillKulUI();}
 }
-
 async function toggleFreeze(uid,isFrozen){
   const yeni=!isFrozen;
-  await sb.from('profiles').update({frozen:yeni}).eq('id',uid);
-  showToast(yeni?'🔒':'🔓',yeni?'Kullanıcı donduruldu!':'Kullanıcı aktif edildi!');
-  fillKulUI();
+  const {error}=await sb.from('profiles').update({frozen:yeni}).eq('id',uid);
+  if(error){showToast('❌','Hata!');}
+  else{showToast(yeni?'🔒':'🔓',yeni?'Donduruldu!':'Aktif edildi!');fillKulUI();}
 }
 
 async function delUser(uid,name){
